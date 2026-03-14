@@ -1,36 +1,60 @@
-name: Model Verification Pipeline
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Build Tooling
         run: docker build -t concerto-tool -f docker/Dockerfile .
 
-      - name: Generate and Test
+      - name: Generate Model
+        shell: bash
         run: |
-          # 1. Clean and Generate
-          rm -rf dist/model && mkdir -p dist/model
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace concerto-tool \
+          set -euo pipefail
+
+          rm -rf dist/model
+          mkdir -p dist/model
+
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            concerto-tool \
             compile --model models/model.cto --target golang --output dist/model
-          
-          # 2. FLATTEN: Force all files into 'package model'
+
+      - name: Prepare Go module and inject test
+        shell: bash
+        run: |
+          set -euo pipefail
+
           cd dist/model
-          # Fix: Standard find -exec syntax
-          find . -name "*.go" -exec sed -i 's/^package .*/package model/' {} +
-          
-          # 3. Clean up internal imports
-          # We remove lines that try to import other local concerto packages
-          find . -name "*.go" -exec sed -i '/import "concerto/d' {} +
-          find . -name "*.go" -exec sed -i '/import "org_example_shipping/d' {} +
 
-          # 4. Inject Test
-          cp ../../tests/generic_test.go ./model_test.go
-          sed -i 's/package main/package model/' model_test.go
+          PKG_DIR="$(find . -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          if [ -z "${PKG_DIR}" ]; then
+            echo "No generated package directory found in dist/model"
+            exit 1
+          fi
 
-          # 5. Final Run
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace/dist/model \
-            --entrypoint /bin/sh concerto-tool -c "go mod init model-test && go mod tidy && go test -v ."
+          cat > go.mod <<'EOF'
+          module modeltest
+
+          go 1.25.0
+          EOF
+
+          cp ../../tests/generic_test.go "${PKG_DIR}/model_test.go"
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace/dist/model \
+            --entrypoint /bin/sh \
+            concerto-tool \
+            -c "go mod tidy && go test -v ./..."
