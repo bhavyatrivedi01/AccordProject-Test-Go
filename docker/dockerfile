@@ -6,7 +6,7 @@ FROM golang:1.25-alpine
 # Copy the CLI from the node stage
 COPY --from=base /usr/local /usr/local
 RUN apk add --no-cache libstdc++ g++
-RUN npm install -g @accordproject/concerto-cli --ignore-scripts
+RUN npm install -g @accordproject/concerto-cli@3.18.2 --ignore-scripts
 WORKDIR /workspace
 
 # Install common Go quality tools
