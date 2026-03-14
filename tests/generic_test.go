@@ -1,20 +1,27 @@
-package main // Changed to 'package model' by the YAML
+package org_example_shipping
 
 import (
-	"encoding/json"
-	"testing"
+        "encoding/json"
+        "testing"
 )
 
 func TestGeneratedModel(t *testing.T) {
-	// Sample data matching your CTO
-	data := `{"shipmentId":"123","weight":10.5}`
-	value := &Shipment{}
+        data := `{
+                "shipmentId": "123",
+                "weight": 10.5,
+                "status": "PLANNED"
+        }`
 
-	if err := json.Unmarshal([]byte(data), value); err != nil {
-		t.Fatalf("Failed to unmarshal: %v", err)
-	}
+        var value Shipment
+        if err := json.Unmarshal([]byte(data), &value); err != nil {
+                t.Fatalf("failed to unmarshal: %v", err)
+        }
 
-	if value.ShipmentId == "" {
-		t.Error("Data binding failed: ShipmentId is empty")
-	}
+        if value.ShipmentId != "123" {
+                t.Fatalf("expected ShipmentId to be 123, got %q", value.ShipmentId)
+        }
+
+        if value.Weight != 10.5 {
+                t.Fatalf("expected Weight to be 10.5, got %v", value.Weight)
+        }
 }
