@@ -1,15 +1,20 @@
-# We use a multi-stage build to keep the image lean
-FROM node:20-alpine AS base
-RUN npm install -g @accordproject/concerto-cli
-
+# Start with Go 1.25 on Alpine
 FROM golang:1.25-alpine
-# Copy the CLI from the node stage
-COPY --from=base /usr/local /usr/local
-RUN apk add --no-cache libstdc++ g++
+
+# Install Node.js, NPM, and build dependencies natively
+RUN apk add --no-cache \
+    nodejs \
+    npm \
+    libstdc++ \
+    g++ \
+    make
+
+# Install Concerto CLI and IGNORE scripts to bypass the upstream linting bug
+RUN npm install -g @accordproject/concerto-cli@3.18.2 --ignore-scripts
+
 WORKDIR /workspace
 
-# Install common Go quality tools
+# Install Go static analysis tools
 RUN go install honnef.co/go/tools/cmd/staticcheck@latest
 
-# This image is now a "Go CodeGen Toolbox"
 ENTRYPOINT ["concerto"]
