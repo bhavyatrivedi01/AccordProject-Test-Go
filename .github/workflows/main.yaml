@@ -10,7 +10,7 @@ jobs:
 
       # Step 1: Build your custom Tooling Image from the /docker folder
       - name: Build Tooling Image
-        run: docker build -t concerto-tool -f docker/generator.Dockerfile .
+        run: docker build -t concerto-tool -f docker/Dockerfile .
 
       # Step 2: Loop through models and use the Docker image to generate code
       - name: Generate Code for all CTOs
