@@ -1,20 +1,16 @@
-# Start with Go 1.25 on Alpine
 FROM golang:1.25-alpine
 
-# Install Node.js, NPM, and build dependencies natively
 RUN apk add --no-cache \
     nodejs \
     npm \
     libstdc++ \
     g++ \
-    make
+    make \
+    bash \
+    git
 
-# Install Concerto CLI and IGNORE scripts to bypass the upstream linting bug
 RUN npm install -g @accordproject/concerto-cli@3.18.2 --ignore-scripts
 
 WORKDIR /workspace
-
-# Install Go static analysis tools
-RUN go install honnef.co/go/tools/cmd/staticcheck@latest
 
 ENTRYPOINT ["concerto"]
