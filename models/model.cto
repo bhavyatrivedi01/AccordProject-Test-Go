@@ -1,0 +1,14 @@
+namespace org.example.shipping@1.0.0
+
+enum ShipStatus {
+  o PLANNED
+  o SHIPPED
+  o DELIVERED
+}
+
+concept Shipment identified by shipmentId {
+  o String shipmentId
+  o Double weight
+  o ShipStatus status
+  o DateTime deliveryDate optional
+}
