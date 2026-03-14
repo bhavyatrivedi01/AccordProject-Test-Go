@@ -12,21 +12,25 @@ jobs:
 
       - name: Generate and Test
         run: |
+          # 1. Clean and Generate
           rm -rf dist/model && mkdir -p dist/model
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace concerto-tool \
             compile --model models/model.cto --target golang --output dist/model
           
+          # 2. FLATTEN: Force all files into 'package model'
           cd dist/model
-          # 1. Standardize the package name
+          # Fix: Standard find -exec syntax
           find . -name "*.go" -exec sed -i 's/^package .*/package model/' {} +
-          # 2. Clean up imports that are now local
-          find . -name "*.go" -exec sed -i '/import "concerto/d' ./{} +
-          find . -name "*.go" -exec sed -i '/import "org_example_shipping/d' ./{} +
+          
+          # 3. Clean up internal imports
+          # We remove lines that try to import other local concerto packages
+          find . -name "*.go" -exec sed -i '/import "concerto/d' {} +
+          find . -name "*.go" -exec sed -i '/import "org_example_shipping/d' {} +
 
-          # 3. Setup test
+          # 4. Inject Test
           cp ../../tests/generic_test.go ./model_test.go
           sed -i 's/package main/package model/' model_test.go
 
-          # 4. Run inside the 1.25 container
+          # 5. Final Run
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace/dist/model \
             --entrypoint /bin/sh concerto-tool -c "go mod init model-test && go mod tidy && go test -v ."
