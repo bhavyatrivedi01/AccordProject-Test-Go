@@ -8,29 +8,37 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Step 1: Build your custom Tooling Image from the /docker folder
       - name: Build Tooling Image
         run: docker build -t concerto-tool -f docker/Dockerfile .
 
-      # Step 2: Loop through models and use the Docker image to generate code
-      - name: Generate Code for all CTOs
+      - name: Generate and Organize Code
         run: |
           for f in models/*.cto; do
             filename=$(basename "$f" .cto)
-            mkdir -p "dist/$filename"
-            # Use -w to set the working directory so paths remain consistent
+            temp_out="temp_$filename"
+            final_out="dist/$filename"
+            mkdir -p "$temp_out"
+            
+            # Generate into a temporary folder first
             docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace concerto-tool \
-              compile --model "$f" --target golang --output "dist/$filename"
+              compile --model "$f" --target golang --output "$temp_out"
+            
+            # Move files into package-specific subdirectories
+            find "$temp_out" -name "*.go" | while read -r gofile; do
+              pkg_name=$(grep -m 1 "^package " "$gofile" | awk '{print $2}')
+              mkdir -p "$final_out/$pkg_name"
+              mv "$gofile" "$final_out/$pkg_name/"
+            done
           done
 
-      # Step 3: Inject the generic test and run 'go test' inside the container
       - name: Run Generic Tests
         run: |
           for dir in dist/*; do
-            # Copy the generic test from /tests into the generated output folder
+            # 1. Copy the generic test into the root of the generated model directory
             cp tests/generic_test.go "$dir/"
             
-            # Run the test environment inside the container
+            # 2. Run the test environment inside the container
+            # We use 'go test ./...' to recurse into the package subdirectories
             docker run --rm -v ${{ github.workspace }}:/workspace --workdir "/workspace/$dir" \
-              --entrypoint /bin/sh concerto-tool -c "go mod init test/models && go mod tidy && go test -v ."
+              --entrypoint /bin/sh concerto-tool -c "go mod init test/models && go mod tidy && go test -v ./..."
           done
