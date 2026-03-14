@@ -19,7 +19,7 @@ jobs:
             final_out="dist/$filename"
             mkdir -p "$temp_out"
             
-            # Generate into a temporary folder first
+            # Generate code
             docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace concerto-tool \
               compile --model "$f" --target golang --output "$temp_out"
             
@@ -34,11 +34,30 @@ jobs:
       - name: Run Generic Tests
         run: |
           for dir in dist/*; do
-            # 1. Copy the generic test into the root of the generated model directory
-            cp tests/generic_test.go "$dir/"
-            
-            # 2. Run the test environment inside the container
-            # We use 'go test ./...' to recurse into the package subdirectories
-            docker run --rm -v ${{ github.workspace }}:/workspace --workdir "/workspace/$dir" \
-              --entrypoint /bin/sh concerto-tool -c "go mod init test/models && go mod tidy && go test -v ./..."
+            model_name=$(basename "$dir")
+            echo "Processing module: $model_name"
+
+            # 1. Initialize the root module for this CTO file
+            docker run --rm -v ${{ github.workspace }}:/workspace -w "/workspace/$dir" \
+              --entrypoint /bin/sh concerto-tool -c "go mod init test/models/$model_name"
+
+            # 2. Fix 'not in std' by mapping packages to local folders
+            for subdir in $dir/*/; do
+              pkg=$(basename "$subdir")
+              # Map the package name to its relative local path
+              docker run --rm -v ${{ github.workspace }}:/workspace -w "/workspace/$dir" \
+                --entrypoint /bin/sh concerto-tool -c "go mod edit -replace $pkg=./$pkg"
+              
+              # 3. Inject the test file ONLY where the Shipment struct exists
+              # We search for the struct definition in the file
+              if grep -q "type Shipment struct" "$subdir"/*.go 2>/dev/null; then
+                echo "Found Shipment in $pkg. Injecting test..."
+                # Update package name in test file to match the directory
+                sed "s/package main/package $pkg/" tests/generic_test.go > "$subdir/generic_test.go"
+              fi
+            done
+
+            # 4. Final sync and test execution
+            docker run --rm -v ${{ github.workspace }}:/workspace -w "/workspace/$dir" \
+              --entrypoint /bin/sh concerto-tool -c "go mod tidy && go test -v ./..."
           done
