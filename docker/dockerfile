@@ -2,7 +2,7 @@
 FROM node:20-alpine AS base
 RUN npm install -g @accordproject/concerto-cli
 
-FROM golang:1.23-alpine
+FROM golang:1.25-alpine
 # Copy the CLI from the node stage
 COPY --from=base /usr/local /usr/local
 WORKDIR /workspace
