@@ -1,4 +1,4 @@
-package main // The YAML's 'sed' command will change this to the correct package name
+package main // Changed by workflow
 
 import (
 	"encoding/json"
@@ -6,35 +6,25 @@ import (
 	"testing"
 )
 
-func TestAllGeneratedModels(t *testing.T) {
-	testCases := []struct {
-		Name  string
-		Value interface{}
-		Data  string
-	}{
-		{
-			Name:  "Shipment", 
-			Value: &Shipment{}, 
-			Data:  `{"shipmentId":"123","weight":10.5}`,
-		},
-	}
+func TestGeneratedModel(t *testing.T) {
+	// Sample data matching the CTO definition
+	data := `{"shipmentId":"123","weight":10.5}`
+	
+	// We use the struct name directly.
+	// The workflow moves this file INTO the folder where Shipment is defined.
+	value := &Shipment{}
 
-	for _, tc := range testCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			val := reflect.ValueOf(tc.Value)
-			// Reflection helps ensure the generated code matches expected Go types
-			if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
-				t.Fatalf("%s is not a pointer to a struct", tc.Name)
-			}
+	t.Run("Unmarshal", func(t *testing.T) {
+		if err := json.Unmarshal([]byte(data), value); err != nil {
+			t.Fatalf("Failed to unmarshal: %v", err)
+		}
+	})
 
-			if err := json.Unmarshal([]byte(tc.Data), tc.Value); err != nil {
-				t.Errorf("Failed to unmarshal %s: %v", tc.Name, err)
-			}
-
-			_, err := json.Marshal(tc.Value)
-			if err != nil {
-				t.Errorf("Failed to marshal %s: %v", tc.Name, err)
-			}
-		})
-	}
+	t.Run("ReflectCheck", func(t *testing.T) {
+		v := reflect.ValueOf(value).Elem()
+		idField := v.FieldByName("ShipmentId")
+		if !idField.IsValid() || idField.String() != "123" {
+			t.Error("Reflection failed to find or verify ShipmentId")
+		}
+	})
 }
