@@ -13,30 +13,14 @@ jobs:
         run: docker build -t concerto-tool -f docker/Dockerfile .
 
       # Step 2: Loop through models and use the Docker image to generate code
-      - name: Generate and Sort Go Packages
+      - name: Generate Code for all CTOs
         run: |
           for f in models/*.cto; do
             filename=$(basename "$f" .cto)
-            temp_out="temp_gen_$filename"
-            final_out="dist/$filename"
-            mkdir -p "$temp_out"
-            
-            # 1. Generate everything into a temp folder
+            mkdir -p "dist/$filename"
+            # Use -w to set the working directory so paths remain consistent
             docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace concerto-tool \
-              compile --model "$f" --target golang --output "$temp_out"
-            
-            # 2. For each .go file, find its package name and move it to a subfolder
-            find "$temp_out" -name "*.go" | while read -r gofile; do
-              pkg_name=$(grep -m 1 "^package " "$gofile" | awk '{print $2}')
-              mkdir -p "$final_out/$pkg_name"
-              mv "$gofile" "$final_out/$pkg_name/"
-            done
-            
-            # 3. Initialize the module in the root of the model's dist folder
-            cd "$final_out"
-            go mod init "test/models/$filename"
-            go mod tidy
-            cd ../..
+              compile --model "$f" --target golang --output "dist/$filename"
           done
 
       # Step 3: Inject the generic test and run 'go test' inside the container
