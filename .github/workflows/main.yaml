@@ -13,9 +13,8 @@ jobs:
         run: docker build -t concerto-tool -f docker/Dockerfile .
 
       # Step 2: Loop through models and use the Docker image to generate code
-      - name: Generate Code for all CTOs
-        - name: Generate and Sort Go Packages
-          run: |
+      - name: Generate and Sort Go Packages
+        run: |
           for f in models/*.cto; do
             filename=$(basename "$f" .cto)
             temp_out="temp_gen_$filename"
