@@ -37,27 +37,26 @@ jobs:
             model_name=$(basename "$dir")
             echo "Processing module: $model_name"
 
-            # 1. Initialize the root module for this CTO file
+            # 1. Initialize ONE root module for the entire model folder
             docker run --rm -v ${{ github.workspace }}:/workspace -w "/workspace/$dir" \
               --entrypoint /bin/sh concerto-tool -c "go mod init test/models/$model_name"
 
-            # 2. Fix 'not in std' by mapping packages to local folders
-            for subdir in $dir/*/; do
+            # 2. Inject the test file into the specific sub-package
+            # We use the full module path: test/models/[model_name]/[pkg_name]
+            for subdir in "$dir"/*/; do
               pkg=$(basename "$subdir")
-              # Map the package name to its relative local path
-              docker run --rm -v ${{ github.workspace }}:/workspace -w "/workspace/$dir" \
-                --entrypoint /bin/sh concerto-tool -c "go mod edit -replace $pkg=./$pkg"
-              
-              # 3. Inject the test file ONLY where the Shipment struct exists
-              # We search for the struct definition in the file
               if grep -q "type Shipment struct" "$subdir"/*.go 2>/dev/null; then
                 echo "Found Shipment in $pkg. Injecting test..."
-                # Update package name in test file to match the directory
+                
+                # Update the test file: 
+                # - Set correct package name
+                # - This test stays in the same folder as the code, so it sees 'Shipment' directly
                 sed "s/package main/package $pkg/" tests/generic_test.go > "$subdir/generic_test.go"
               fi
             done
 
-            # 4. Final sync and test execution
+            # 3. Run tidy and test from the ROOT of the model directory
+            # Go will automatically find the sub-folders
             docker run --rm -v ${{ github.workspace }}:/workspace -w "/workspace/$dir" \
               --entrypoint /bin/sh concerto-tool -c "go mod tidy && go test -v ./..."
           done
