@@ -2,61 +2,48 @@ name: Model Verification Pipeline
 on: [push, pull_request]
 
 jobs:
-  verify-models:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Build Tooling Image
+      - name: Build Tooling
         run: docker build -t concerto-tool -f docker/Dockerfile .
 
-      - name: Generate and Organize Code
+      - name: Generate and Test
         run: |
-          for f in models/*.cto; do
-            filename=$(basename "$f" .cto)
-            temp_out="temp_$filename"
-            final_out="dist/$filename"
-            mkdir -p "$temp_out"
-            
-            # Generate code
-            docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace concerto-tool \
-              compile --model "$f" --target golang --output "$temp_out"
-            
-            # Move files into package-specific subdirectories
-            find "$temp_out" -name "*.go" | while read -r gofile; do
-              pkg_name=$(grep -m 1 "^package " "$gofile" | awk '{print $2}')
-              mkdir -p "$final_out/$pkg_name"
-              mv "$gofile" "$final_out/$pkg_name/"
-            done
+          # 1. Generate Go code
+          mkdir -p temp_gen dist/model
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace concerto-tool \
+            compile --model models/model.cto --target golang --output temp_gen
+          
+          # 2. Sort into packages (1 per folder)
+          find temp_gen -name "*.go" | while read -r gofile; do
+            pkg_name=$(grep -m 1 "^package " "$gofile" | awk '{print $2}')
+            mkdir -p "dist/model/$pkg_name"
+            mv "$gofile" "dist/model/$pkg_name/"
           done
 
-      - name: Run Generic Tests
-        run: |
-          for dir in dist/*; do
-            model_name=$(basename "$dir")
-            echo "Processing module: $model_name"
-
-            # 1. Initialize ONE root module for the entire model folder
-            docker run --rm -v ${{ github.workspace }}:/workspace -w "/workspace/$dir" \
-              --entrypoint /bin/sh concerto-tool -c "go mod init test/models/$model_name"
-
-            # 2. Inject the test file into the specific sub-package
-            # We use the full module path: test/models/[model_name]/[pkg_name]
-            for subdir in "$dir"/*/; do
-              pkg=$(basename "$subdir")
-              if grep -q "type Shipment struct" "$subdir"/*.go 2>/dev/null; then
-                echo "Found Shipment in $pkg. Injecting test..."
-                
-                # Update the test file: 
-                # - Set correct package name
-                # - This test stays in the same folder as the code, so it sees 'Shipment' directly
-                sed "s/package main/package $pkg/" tests/generic_test.go > "$subdir/generic_test.go"
-              fi
-            done
-
-            # 3. Run tidy and test from the ROOT of the model directory
-            # Go will automatically find the sub-folders
-            docker run --rm -v ${{ github.workspace }}:/workspace -w "/workspace/$dir" \
-              --entrypoint /bin/sh concerto-tool -c "go mod tidy && go test -v ./..."
+          # 3. Initialize Go Module and Fix Imports
+          cd dist/model
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace/dist/model \
+            --entrypoint /bin/sh concerto-tool -c "go mod init model-test"
+          
+          # Force Go to look locally for concerto-generated packages
+          for d in */; do
+            pkg=${d%/}
+            docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace/dist/model \
+              --entrypoint /bin/sh concerto-tool -c "go mod edit -replace $pkg=./$pkg"
           done
+
+          # 4. Inject Test File
+          # Look for which folder contains the Shipment struct
+          target_pkg=$(grep -l "type Shipment struct" */*.go | head -n 1 | cut -d/ -f1)
+          if [ -z "$target_pkg" ]; then echo "Shipment struct not found"; exit 1; fi
+          
+          echo "Injecting test into $target_pkg"
+          sed "s/package main/package $target_pkg/" ../../tests/generic_test.go > "$target_pkg/model_test.go"
+
+          # 5. Run Tests
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace/dist/model \
+            --entrypoint /bin/sh concerto-tool -c "go mod tidy && go test -v ./..."
