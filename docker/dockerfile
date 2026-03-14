@@ -1,0 +1,14 @@
+# We use a multi-stage build to keep the image lean
+FROM node:20-alpine AS base
+RUN npm install -g @accordproject/concerto-cli
+
+FROM golang:1.23-alpine
+# Copy the CLI from the node stage
+COPY --from=base /usr/local /usr/local
+WORKDIR /workspace
+
+# Install common Go quality tools
+RUN go install honnef.co/go/tools/cmd/staticcheck@latest
+
+# This image is now a "Go CodeGen Toolbox"
+ENTRYPOINT ["concerto"]

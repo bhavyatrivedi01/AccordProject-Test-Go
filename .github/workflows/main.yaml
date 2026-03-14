@@ -1,0 +1,30 @@
+name: Model Verification Pipeline
+on: [push]
+
+jobs:
+  verify-models:
+    runs-on: ubuntu-latest
+    container:
+      image: your-docker-hub-username/concerto-go-tool:latest # Your custom image
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Code for all CTOs
+        run: |
+          for f in models/*.cto; do
+            filename=$(basename "$f" .cto)
+            mkdir -p "dist/$filename"
+            concerto compile --model "$f" --target golang --output "dist/$filename"
+          done
+
+      - name: Initialize and Run Generic Tests
+        run: |
+          # Copy the generic test file into each generated directory
+          for dir in dist/*; do
+            cp generic_test.go "$dir/"
+            cd "$dir"
+            go mod init "test/$(basename "$dir")"
+            go mod tidy
+            go test -v .
+            cd ../..
+          done
