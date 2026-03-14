@@ -1,30 +1,36 @@
 name: Model Verification Pipeline
-on: [push]
+on: [push, pull_request]
 
 jobs:
   verify-models:
     runs-on: ubuntu-latest
-    container:
-      image: your-docker-hub-username/concerto-go-tool:latest # Your custom image
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
+      # Step 1: Build your custom Tooling Image from the /docker folder
+      - name: Build Tooling Image
+        run: docker build -t concerto-tool -f docker/generator.Dockerfile .
+
+      # Step 2: Loop through models and use the Docker image to generate code
       - name: Generate Code for all CTOs
         run: |
           for f in models/*.cto; do
             filename=$(basename "$f" .cto)
             mkdir -p "dist/$filename"
-            concerto compile --model "$f" --target golang --output "dist/$filename"
+            # We mount the current workspace to /workspace inside the container
+            docker run --rm -v ${{ github.workspace }}:/workspace concerto-tool \
+              compile --model "$f" --target golang --output "dist/$filename"
           done
 
-      - name: Initialize and Run Generic Tests
+      # Step 3: Inject the generic test and run 'go test' inside the container
+      - name: Run Generic Tests
         run: |
-          # Copy the generic test file into each generated directory
           for dir in dist/*; do
-            cp generic_test.go "$dir/"
-            cd "$dir"
-            go mod init "test/$(basename "$dir")"
-            go mod tidy
-            go test -v .
-            cd ../..
+            # Copy the generic test from /tests into the generated output folder
+            cp tests/generic_test.go "$dir/"
+            
+            # Run the test environment inside the container
+            docker run --rm -v ${{ github.workspace }}:/workspace --workdir "/workspace/$dir" \
+              --entrypoint /bin/sh concerto-tool -c "go mod init test/models && go mod tidy && go test -v ."
           done
